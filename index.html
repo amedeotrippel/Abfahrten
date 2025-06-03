@@ -218,8 +218,23 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // Helper to get scheduled/actual departure robustly
 function getDepartureTimes(entry) {
-  const scheduledRaw = (entry.stop && entry.stop.scheduledDeparture) ? entry.stop.scheduledDeparture : entry.scheduledDeparture;
-  const actualRaw = (entry.stop && entry.stop.departure) ? entry.stop.departure : entry.departure;
+  let scheduledRaw = null;
+  let actualRaw = null;
+
+  if (entry.stop && entry.stop.scheduledDeparture) {
+    scheduledRaw = entry.stop.scheduledDeparture;
+    actualRaw = entry.stop.departure || entry.stop.scheduledDeparture;
+  } else if (entry.scheduledDeparture) {
+    scheduledRaw = entry.scheduledDeparture;
+    actualRaw = entry.departure || entry.scheduledDeparture;
+  } else if (entry.stop && entry.stop.departure) {
+    scheduledRaw = entry.stop.departure;
+    actualRaw = entry.stop.departure;
+  } else if (entry.departure) {
+    scheduledRaw = entry.departure;
+    actualRaw = entry.departure;
+  }
+
   if (!scheduledRaw) return null;
   const scheduled = new Date(scheduledRaw);
   const actual = actualRaw ? new Date(actualRaw) : scheduled;
