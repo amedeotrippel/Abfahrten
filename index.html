@@ -151,7 +151,10 @@
   <ul id="results"></ul>
 
   <script>
-    let favoriteTrips = JSON.parse(localStorage.getItem("favoriteTrips")) || [
+    let favoriteTrips = JSON.parse(localStorage.getItem("favoriteTrips"))?.map(t => ({
+      ...t,
+      count: typeof t.count === "number" ? t.count : 3
+    })) || [
       { from: "Bern, Weissensteinstrasse", to: "Bern, Bahnhof", count: 3 },
       { from: "Bern, Beaumont", to: "Bern, Bahnhof", count: 3 }
     ];
@@ -160,26 +163,33 @@
       localStorage.setItem("favoriteTrips", JSON.stringify(favoriteTrips));
     }
 
-    function renderFavorites() {
+        function renderFavorites() {
       const container = document.getElementById("favorites");
       container.innerHTML = "";
       favoriteTrips.forEach((trip, index) => {
-        loadFilteredDepartures(trip.from, trip.to, index, typeof trip.count === "number" ? trip.count : 3);
+        const count = trip.count ?? 3; // Fallback auf 3
+        loadFilteredDepartures(trip.from, trip.to, index, count);
       });
     }
 
     // Move selectedDepCount to global scope
     let selectedDepCount = 3;
 
-    document.addEventListener("DOMContentLoaded", function() {
-      // Handle button selection
-      document.querySelectorAll('.dep-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-          document.querySelectorAll('.dep-btn').forEach(b => b.classList.remove('active'));
-          this.classList.add('active');
-          selectedDepCount = parseInt(this.getAttribute('data-count'), 10);
-        });
-      });
+document.addEventListener("DOMContentLoaded", function() {
+  // Finde initial den aktiven Button
+  const activeBtn = document.querySelector('.dep-btn.active');
+  if (activeBtn) {
+    selectedDepCount = parseInt(activeBtn.getAttribute('data-count'), 10);
+  }
+
+  // Handle button selection
+  document.querySelectorAll('.dep-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.dep-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      selectedDepCount = parseInt(this.getAttribute('data-count'), 10);
+    });
+  });
 
       // Add favorite with correct count
       window.addFavorite = function() {
@@ -269,11 +279,13 @@
         filtered.slice(0, count).forEach((entry) => {
           const li = document.createElement("li");
           const scheduled = new Date(entry.stop.scheduledDeparture);
-          const actual = new Date(entry.stop.departure);
+          const actual = entry.stop.departure ? new Date(entry.stop.departure) : scheduled;
           const delay = Math.round((actual - scheduled) / 60000); // Minuten
-          const time = actual.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
-          li.textContent = `${entry.category} ${entry.number} → ${entry.to} um ${time}` +
-            (delay > 0 ? ` (+${delay} Min)` : "");
+          const scheduledTime = scheduled.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
+          const actualTime = actual.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
+
+          li.innerHTML = `${entry.category} ${entry.number} → ${entry.to} um <b>${scheduledTime}</b>` +
+            (delay > 0 ? ` <span style="color:#d00;">(+${delay} Min, neu ${actualTime})</span>` : "");
           list.appendChild(li);
         });
 
@@ -316,11 +328,13 @@
           data.stationboard.forEach(entry => {
             const li = document.createElement("li");
             const scheduled = new Date(entry.stop.scheduledDeparture);
-            const actual = new Date(entry.stop.departure);
+            const actual = entry.stop.departure ? new Date(entry.stop.departure) : scheduled;
             const delay = Math.round((actual - scheduled) / 60000); // Minuten
-            const time = actual.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
-            li.textContent = `${entry.category} ${entry.number} → ${entry.to} um ${time}` +
-              (delay > 0 ? ` (+${delay} Min)` : "");
+            const scheduledTime = scheduled.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
+            const actualTime = actual.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
+
+            li.innerHTML = `${entry.category} ${entry.number} → ${entry.to} um <b>${scheduledTime}</b>` +
+              (delay > 0 ? ` <span style="color:#d00;">(+${delay} Min, neu ${actualTime})</span>` : "");
             results.appendChild(li);
           });
         })
