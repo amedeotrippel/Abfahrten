@@ -216,152 +216,136 @@ document.addEventListener("DOMContentLoaded", function() {
       setInterval(renderFavorites, 120000);
     });
 
-    // Update loadFilteredDepartures to accept count
-    async function loadFilteredDepartures(fromStation, toDestination, index, count = 3) {
-      const container = document.getElementById("favorites");
+    // Helper to get scheduled/actual departure robustly
+function getDepartureTimes(entry) {
+  const scheduledRaw = (entry.stop && entry.stop.scheduledDeparture) ? entry.stop.scheduledDeparture : entry.scheduledDeparture;
+  const actualRaw = (entry.stop && entry.stop.departure) ? entry.stop.departure : entry.departure;
+  if (!scheduledRaw) return null;
+  const scheduled = new Date(scheduledRaw);
+  const actual = actualRaw ? new Date(actualRaw) : scheduled;
+  if (!scheduled || isNaN(scheduled)) return null;
+  return { scheduled, actual };
+}
 
-      const stationBox = document.createElement("div");
-      const title = document.createElement("h3");
-      const list = document.createElement("ul");
+// --- Favorites ---
+async function loadFilteredDepartures(fromStation, toDestination, index, count = 3) {
+  const container = document.getElementById("favorites");
+  const stationBox = document.createElement("div");
+  const title = document.createElement("h3");
+  const list = document.createElement("ul");
 
-      title.textContent = `Von: ${fromStation} → Nach: ${toDestination}`;
+  title.textContent = `Von: ${fromStation} → Nach: ${toDestination}`;
+  const removeButton = document.createElement("button");
+  removeButton.textContent = "×";
+  removeButton.title = "Entfernen";
+  removeButton.className = "remove-fav-btn";
+  removeButton.onclick = () => {
+    favoriteTrips.splice(index, 1);
+    saveFavorites();
+    renderFavorites();
+  };
+  title.appendChild(removeButton);
+  stationBox.appendChild(title);
+  stationBox.appendChild(list);
+  container.appendChild(stationBox);
 
-      const removeButton = document.createElement("button");
-      removeButton.textContent = "×";
-      removeButton.title = "Entfernen";
-      removeButton.style.marginLeft = "10px";
-      removeButton.style.fontSize = "1em";
-      removeButton.style.padding = "2px 8px";
-      removeButton.style.background = "transparent";
-      removeButton.style.border = "none";
-      removeButton.style.cursor = "pointer";
-      removeButton.style.color = "#888";
-      removeButton.setAttribute("aria-label", "Favorit entfernen");
-      removeButton.onmouseover = () => removeButton.style.color = "#d00";
-      removeButton.onmouseout = () => removeButton.style.color = "#888";
-      removeButton.className = "remove-fav-btn";
-      removeButton.onclick = () => {
-        favoriteTrips.splice(index, 1);
-        saveFavorites();
-        renderFavorites();
-      };
+  const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(fromStation)}&limit=20`;
 
-      title.appendChild(removeButton);
-      stationBox.appendChild(title);
-      stationBox.appendChild(list);
-      container.appendChild(stationBox);
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
 
-      const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(fromStation)}&limit=20`;
+    if (!data.stationboard || !Array.isArray(data.stationboard)) throw new Error("No stationboard data");
 
-      try {
-        const response = await fetch(url);
-        const data = await response.json();
+    const filtered = data.stationboard.filter(entry => {
+      if (!Array.isArray(entry.passList)) return false;
+      const toIndex = entry.passList.findIndex((stop, idx) =>
+        idx > 0 && stop.station.name.toLowerCase() === toDestination.toLowerCase()
+      );
+      return toIndex !== -1;
+    });
 
-        if (!data.stationboard || !Array.isArray(data.stationboard)) {
-          throw new Error("No stationboard data");
-        }
-
-        const filtered = data.stationboard.filter(entry => {
-          if (!Array.isArray(entry.passList)) return false;
-          const toIndex = entry.passList.findIndex((stop, idx) =>
-            idx > 0 && stop.station.name.toLowerCase() === toDestination.toLowerCase()
-          );
-          return toIndex !== -1;
-        });
-
-        if (filtered.length === 0) {
-          const msg = document.createElement("p");
-          msg.textContent = `No upcoming connections to ${toDestination}`;
-          stationBox.appendChild(msg);
-          return;
-        }
-
-        filtered.slice(0, count).forEach((entry) => {
-          const li = document.createElement("li");
-          const scheduledRaw = entry.stop.scheduledDeparture;
-          const actualRaw = entry.stop.departure;
-
-          const scheduled = scheduledRaw ? new Date(scheduledRaw) : null;
-          const actual = actualRaw ? new Date(actualRaw) : scheduled;
-
-          if (!scheduled || isNaN(scheduled)) {
-            li.textContent = "Ungültige Abfahrtszeit";
-            list.appendChild(li);
-            return;
-          }
-
-          const delay = Math.round((actual - scheduled) / 60000); // Minuten
-          const scheduledTime = scheduled.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
-          const actualTime = actual.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
-
-          li.innerHTML = `${entry.category} ${entry.number} → ${entry.to} um <b>${scheduledTime}</b>` +
-            (delay > 0 ? ` <span style="color:#d00;">(+${delay} Min, neu ${actualTime})</span>` : "");
-          list.appendChild(li);
-        });
-
-        const updateTime = document.createElement("p");
-        updateTime.style.fontSize = "0.8em";
-        updateTime.style.color = "gray";
-        updateTime.textContent = `Updated at: ${new Date().toLocaleTimeString('de-CH')}`;
-        stationBox.appendChild(updateTime);
-
-      } catch (error) {
-        const errorMsg = document.createElement("p");
-        errorMsg.textContent = `Could not load departures for ${fromStation}`;
-        errorMsg.style.color = "red";
-        stationBox.appendChild(errorMsg);
-      }
+    if (filtered.length === 0) {
+      const msg = document.createElement("p");
+      msg.textContent = `No upcoming connections to ${toDestination}`;
+      stationBox.appendChild(msg);
+      return;
     }
 
-    // Manual search function (fixed)
-    function getDepartures() {
-      const stationName = document.getElementById("station").value;
-      const results = document.getElementById("results");
-      const errorMsg = document.getElementById("error");
-      results.innerHTML = "";
-      errorMsg.textContent = "";
-
-      if (!stationName) {
-        errorMsg.textContent = "Please enter a station name.";
+    filtered.slice(0, count).forEach((entry) => {
+      const li = document.createElement("li");
+      const times = getDepartureTimes(entry);
+      if (!times) {
+        li.textContent = "Ungültige Abfahrtszeit";
+        list.appendChild(li);
         return;
       }
+      const { scheduled, actual } = times;
+      const delay = Math.round((actual - scheduled) / 60000);
+      const scheduledTime = scheduled.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
+      const actualTime = actual.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
+      li.innerHTML = `${entry.category} ${entry.number} → ${entry.to} um <b>${scheduledTime}</b>` +
+        (delay > 0 ? ` <span style="color:#d00;">(+${delay} Min, neu ${actualTime})</span>` : "");
+      list.appendChild(li);
+    });
 
-      const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stationName)}&limit=10`;
+    const updateTime = document.createElement("p");
+    updateTime.style.fontSize = "0.8em";
+    updateTime.style.color = "gray";
+    updateTime.textContent = `Updated at: ${new Date().toLocaleTimeString('de-CH')}`;
+    stationBox.appendChild(updateTime);
 
-      fetch(url)
-        .then(response => response.json())
-        .then(data => {
-          if (!data.stationboard || !Array.isArray(data.stationboard) || data.stationboard.length === 0) {
-            errorMsg.textContent = "No departures found for this station.";
-            return;
-          }
-          data.stationboard.forEach(entry => {
-            const li = document.createElement("li");
-            const scheduledRaw = entry.stop.scheduledDeparture;
-            const actualRaw = entry.stop.departure;
+  } catch (error) {
+    const errorMsg = document.createElement("p");
+    errorMsg.textContent = `Could not load departures for ${fromStation}`;
+    errorMsg.style.color = "red";
+    stationBox.appendChild(errorMsg);
+  }
+}
 
-            const scheduled = scheduledRaw ? new Date(scheduledRaw) : null;
-            const actual = actualRaw ? new Date(actualRaw) : scheduled;
+// --- Manual search ---
+function getDepartures() {
+  const stationName = document.getElementById("station").value;
+  const results = document.getElementById("results");
+  const errorMsg = document.getElementById("error");
+  results.innerHTML = "";
+  errorMsg.textContent = "";
 
-            if (!scheduled || isNaN(scheduled)) {
-              li.textContent = "Ungültige Abfahrtszeit";
-              results.appendChild(li);
-              return;
-            }
+  if (!stationName) {
+    errorMsg.textContent = "Please enter a station name.";
+    return;
+  }
 
-            const delay = Math.round((actual - scheduled) / 60000); // Minuten
-            const scheduledTime = scheduled.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
-            const actualTime = actual.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
+  const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stationName)}&limit=10`;
 
-            li.innerHTML = `${entry.category} ${entry.number} → ${entry.to} um <b>${scheduledTime}</b>` +
-              (delay > 0 ? ` <span style="color:#d00;">(+${delay} Min, neu ${actualTime})</span>` : "");
-            results.appendChild(li);
-          });
-        })
-        .catch(() => {
-          errorMsg.textContent = "Could not load departures for this station.";
-        });
-    }
+  fetch(url)
+    .then(response => response.json())
+    .then(data => {
+      if (!data.stationboard || !Array.isArray(data.stationboard) || data.stationboard.length === 0) {
+        errorMsg.textContent = "No departures found for this station.";
+        return;
+      }
+      data.stationboard.forEach(entry => {
+        const li = document.createElement("li");
+        const times = getDepartureTimes(entry);
+        if (!times) {
+          li.textContent = "Ungültige Abfahrtszeit";
+          results.appendChild(li);
+          return;
+        }
+        const { scheduled, actual } = times;
+        const delay = Math.round((actual - scheduled) / 60000);
+        const scheduledTime = scheduled.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
+        const actualTime = actual.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
+        li.innerHTML = `${entry.category} ${entry.number} → ${entry.to} um <b>${scheduledTime}</b>` +
+          (delay > 0 ? ` <span style=\"color:#d00;\">(+${delay} Min, neu ${actualTime})</span>` : "");
+        results.appendChild(li);
+      });
+    })
+    .catch(() => {
+      errorMsg.textContent = "Could not load departures for this station.";
+    });
+}
 
     function setupStationSuggestions(inputId) {
       document.getElementById(inputId).addEventListener("input", async function() {
