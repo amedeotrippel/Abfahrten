@@ -278,8 +278,18 @@ document.addEventListener("DOMContentLoaded", function() {
 
         filtered.slice(0, count).forEach((entry) => {
           const li = document.createElement("li");
-          const scheduled = new Date(entry.stop.scheduledDeparture);
-          const actual = entry.stop.departure ? new Date(entry.stop.departure) : scheduled;
+          const scheduledRaw = entry.stop.scheduledDeparture;
+          const actualRaw = entry.stop.departure;
+
+          const scheduled = scheduledRaw ? new Date(scheduledRaw) : null;
+          const actual = actualRaw ? new Date(actualRaw) : scheduled;
+
+          if (!scheduled || isNaN(scheduled)) {
+            li.textContent = "Ungültige Abfahrtszeit";
+            list.appendChild(li);
+            return;
+          }
+
           const delay = Math.round((actual - scheduled) / 60000); // Minuten
           const scheduledTime = scheduled.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
           const actualTime = actual.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
@@ -327,8 +337,18 @@ document.addEventListener("DOMContentLoaded", function() {
           }
           data.stationboard.forEach(entry => {
             const li = document.createElement("li");
-            const scheduled = new Date(entry.stop.scheduledDeparture);
-            const actual = entry.stop.departure ? new Date(entry.stop.departure) : scheduled;
+            const scheduledRaw = entry.stop.scheduledDeparture;
+            const actualRaw = entry.stop.departure;
+
+            const scheduled = scheduledRaw ? new Date(scheduledRaw) : null;
+            const actual = actualRaw ? new Date(actualRaw) : scheduled;
+
+            if (!scheduled || isNaN(scheduled)) {
+              li.textContent = "Ungültige Abfahrtszeit";
+              results.appendChild(li);
+              return;
+            }
+
             const delay = Math.round((actual - scheduled) / 60000); // Minuten
             const scheduledTime = scheduled.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
             const actualTime = actual.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
