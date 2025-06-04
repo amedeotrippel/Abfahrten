@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fahrplan-cache-v3'; // << aktualisiere bei jeder Änderung
+const CACHE_NAME = 'fahrplan-cache-v4'; // << aktualisiere bei jeder Änderung
 const urlsToCache = [
   './',
   './index.html',
