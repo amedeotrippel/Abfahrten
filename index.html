@@ -195,8 +195,18 @@ document.addEventListener("DOMContentLoaded", function() {
       window.addFavorite = function() {
         const from = document.getElementById("fromInput").value.trim();
         const to = document.getElementById("toInput").value.trim();
+        const activeBtn = document.querySelector('.dep-btn.active');
+        const count = activeBtn ? parseInt(activeBtn.getAttribute('data-count'), 10) : 3;
         if (!from || !to) return;
-        favoriteTrips.push({ from, to, count: selectedDepCount });
+        // Check if favorite already exists (case-insensitive, trimmed)
+        const fromNorm = from.toLowerCase().trim();
+        const toNorm = to.toLowerCase().trim();
+        const existing = favoriteTrips.find(fav => fav.from.toLowerCase().trim() === fromNorm && fav.to.toLowerCase().trim() === toNorm);
+        if (existing) {
+          existing.count = count; // Update count if already exists
+        } else {
+          favoriteTrips.push({ from, to, count });
+        }
         saveFavorites();
         renderFavorites();
         document.getElementById("fromInput").value = "";
@@ -264,43 +274,48 @@ async function loadFilteredDepartures(fromStation, toDestination, index, count =
   stationBox.appendChild(list);
   container.appendChild(stationBox);
 
-  const url = `https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(fromStation)}&limit=20`;
+  // Use /connections endpoint for robust direct connections
+  const url = `https://transport.opendata.ch/v1/connections?from=${encodeURIComponent(fromStation)}&to=${encodeURIComponent(toDestination)}&limit=${count}&direct=1`;
 
   try {
     const response = await fetch(url);
     const data = await response.json();
 
-    if (!data.stationboard || !Array.isArray(data.stationboard)) throw new Error("No stationboard data");
+    if (!data.connections || !Array.isArray(data.connections)) throw new Error("No connections data");
 
-    const filtered = data.stationboard.filter(entry => {
-      if (!Array.isArray(entry.passList)) return false;
-      const toIndex = entry.passList.findIndex((stop, idx) =>
-        idx > 0 && stop.station.name.toLowerCase() === toDestination.toLowerCase()
-      );
-      return toIndex !== -1;
-    });
+    // Debug: log how many matches found
+    console.log(`[DEBUG] ${fromStation} → ${toDestination}: Found ${data.connections.length} direct connections (limit=${count})`);
+    if (data.connections.length < count) {
+      console.log('[DEBUG] Full connections:', data.connections);
+    }
 
-    if (filtered.length === 0) {
+    if (data.connections.length === 0) {
       const msg = document.createElement("p");
-      msg.textContent = `No upcoming connections to ${toDestination}`;
+      msg.textContent = `No upcoming direct connections to ${toDestination}`;
       stationBox.appendChild(msg);
       return;
     }
 
-    filtered.slice(0, count).forEach((entry) => {
+    data.connections.slice(0, count).forEach((conn) => {
       const li = document.createElement("li");
-      const times = getDepartureTimes(entry);
-      if (!times) {
-        li.textContent = "Ungültige Abfahrtszeit";
-        list.appendChild(li);
-        return;
-      }
-      const { scheduled, actual } = times;
-      const delay = Math.round((actual - scheduled) / 60000);
-      const scheduledTime = scheduled.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
-      const actualTime = actual.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
-      li.innerHTML = `${entry.category} ${entry.number} → ${entry.to} um <b>${scheduledTime}</b>` +
-        (delay > 0 ? ` <span style="color:#d00;">(+${delay} Min, neu ${actualTime})</span>` : "");
+      // Get departure/arrival times and train info
+      const fromSection = conn.from;
+      const toSection = conn.to;
+      const products = conn.products ? conn.products.join(', ') : '';
+      const category = conn.sections && conn.sections[0] && conn.sections[0].journey ? conn.sections[0].journey.category : '';
+      const number = conn.sections && conn.sections[0] && conn.sections[0].journey ? conn.sections[0].journey.number : '';
+      const scheduled = fromSection.departure ? new Date(fromSection.departure) : null;
+      const actual = fromSection.prognosis && fromSection.prognosis.departure ? new Date(fromSection.prognosis.departure) : scheduled;
+      const delay = (scheduled && actual) ? Math.round((actual - scheduled) / 60000) : 0;
+      const scheduledTime = scheduled ? scheduled.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'}) : '?';
+      const actualTime = actual ? actual.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'}) : '?';
+      // Log prognosis for debugging
+      console.log(`[DEBUG] Prognosis for ${category} ${number} from ${fromStation}:`, fromSection.prognosis);
+      // Check for cancellation
+      const isCanceled = conn.hasOwnProperty('canceled') ? conn.canceled : (conn.sections && conn.sections[0] && conn.sections[0].journey && conn.sections[0].journey.canceled);
+      li.innerHTML = `${category} ${number} → ${toDestination} um <b>${scheduledTime}</b>` +
+        (delay > 0 ? ` <span style=\"color:#d00;\">(+${delay} Min, neu ${actualTime})</span>` : "") +
+        (isCanceled ? ` <span style=\"color:#d00; font-weight:bold;\">(Canceled)</span>` : "");
       list.appendChild(li);
     });
 
